@@ -1,0 +1,73 @@
+package com.example.bank.query.controllers;
+
+import java.util.List;
+
+import org.axonframework.messaging.responsetypes.ResponseTypes;
+import org.axonframework.queryhandling.QueryGateway;
+import org.axonframework.queryhandling.SubscriptionQueryResult;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.example.bank.query.dto.AccountHistoryDto;
+import com.example.bank.query.dto.AccountOperationResponseDTO;
+import com.example.bank.query.dto.BankAccountResponseDTO;
+import com.example.bank.query.queries.GetAccountHistoryQueryDTO;
+import com.example.bank.query.queries.GetAccountOperationsQueryDTO;
+import com.example.bank.query.queries.GetAccountQueryDTO;
+import com.example.bank.query.queries.GetAllAccountsRequestDTO;
+
+import reactor.core.publisher.Flux;
+
+@RestController
+@RequestMapping(path = "/query")
+public class AccountQueryRestApi {
+
+	private QueryGateway queryGateway;
+
+	public AccountQueryRestApi(QueryGateway queryGateway) {
+		this.queryGateway = queryGateway;
+	}
+
+	@GetMapping(path = "/accounts/{id}")
+	public BankAccountResponseDTO getBanAccount(@PathVariable String id) {
+		GetAccountQueryDTO queryDTO = new GetAccountQueryDTO();
+		queryDTO.setId(id);
+		return queryGateway.query(queryDTO, BankAccountResponseDTO.class).join();
+	}
+
+	@GetMapping(path = "/accounts")
+	public List<BankAccountResponseDTO> getAll() {
+		return queryGateway
+				.query(new GetAllAccountsRequestDTO(), ResponseTypes.multipleInstancesOf(BankAccountResponseDTO.class))
+				.join();
+	}
+
+	@GetMapping(path = "/accountOperations/{accountId}")
+    public List<AccountOperationResponseDTO> accountOperationList(@PathVariable String accountId){
+        return queryGateway
+        		.query(new GetAccountOperationsQueryDTO(accountId),ResponseTypes.multipleInstancesOf(AccountOperationResponseDTO.class)).join();
+	}
+	
+	@GetMapping(path = "/history/{accountId}")
+	public AccountHistoryDto accountHisot(@PathVariable String accountId) {
+		return queryGateway
+				.query(new GetAccountHistoryQueryDTO(accountId),
+				AccountHistoryDto.class).join();
+	}
+	// SSE : Server sent event
+    @GetMapping(value = "/{accountId}/watch",produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<BankAccountResponseDTO> watch(@PathVariable String accountId){
+
+        SubscriptionQueryResult<BankAccountResponseDTO,BankAccountResponseDTO> result=
+                queryGateway.subscriptionQuery(
+                        new GetAccountQueryDTO(accountId),
+                        ResponseTypes.instanceOf(BankAccountResponseDTO.class), // Premier reponse
+                        ResponseTypes.instanceOf(BankAccountResponseDTO.class) // Reponse en temps réel à chaque update
+                        );
+        return result.initialResult().concatWith(result.updates());
+    }
+
+}
